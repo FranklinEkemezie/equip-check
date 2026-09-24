@@ -1,99 +1,91 @@
-CXX			:= g++
-CXXFLAGS	:= -std=c++23 -Wall -Wextra -g -I src
+# Change this value when reusing this Makefile for another project.
+PROJECT_NAME := equip-check
 
-BIN_DIR		:= bin
-BUILD_DIR	:= build
+# Toolchain settings. Override them on the command line if needed, for example:
+# make CXX=clang++ build
+CXX ?= g++
+CPPFLAGS := -I src -I tests
+CXXFLAGS := -std=c++23 -Wall -Wextra -Wpedantic
+LDFLAGS :=
 
-PROJECT_NAME = __starter
+SRC_DIR := src
+APP_DIR := app
+TEST_DIR := tests
+BUILD_ROOT := build
+BUILD_TYPE ?= debug
+BUILD_DIR := $(BUILD_ROOT)/$(BUILD_TYPE)
+BIN_DIR := $(BUILD_DIR)/bin
 
-SRC_DIR		= src
-TEST_DIR	= tests
-APP_DIR		= app
+ifeq ($(BUILD_TYPE),debug)
+CXXFLAGS += -g3 -O0
+else ifeq ($(BUILD_TYPE),release)
+CXXFLAGS += -O2 -DNDEBUG
+else
+$(error BUILD_TYPE must be either debug or release)
+endif
 
+SOURCES := $(wildcard $(SRC_DIR)/*.cpp $(SRC_DIR)/**/*.cpp)
+OBJECTS := $(patsubst %.cpp,$(BIN_DIR)/%.o,$(SOURCES))
+DEPENDENCIES := $(OBJECTS:.o=.d)
 
-SOURCES		= $(wildcard src/*.cpp src/**/*.cpp)
-OBJECTS		= $(patsubst %.cpp,$(BIN_DIR)/%.o, $(SOURCES))
+APP_SOURCES := $(wildcard $(APP_DIR)/*.cpp $(APP_DIR)/**/*.cpp)
+APP_OBJECTS := $(patsubst %.cpp,$(BIN_DIR)/%.o,$(APP_SOURCES))
+APP_DEPENDENCIES := $(APP_OBJECTS:.o=.d)
 
-TESTS_SRC	= $(wildcard tests/*Test.cpp tests/**/*Test.cpp)
-TESTS		= $(patsubst %.cpp,$(BIN_DIR)/%, $(TESTS_SRC))
+TEST_SOURCES := $(wildcard $(TEST_DIR)/*Test.cpp $(TEST_DIR)/**/*Test.cpp)
+TEST_BINS := $(patsubst $(TEST_DIR)/%.cpp,$(BIN_DIR)/tests/%,$(TEST_SOURCES))
 
-LIBRARY		= $(BUILD_DIR)/lib$(PROJECT_NAME).a
-LIBRARY_SO	= $(patsubst %.a,%.so, $(LIBRARY))
+LIBRARY := $(BUILD_DIR)/lib$(PROJECT_NAME).a
+APP := $(BUILD_DIR)/$(PROJECT_NAME)
+FORMAT_SOURCES := $(SOURCES) $(APP_SOURCES) $(TEST_SOURCES) $(TEST_DIR)/*.hpp
 
-APP_SRC		= $(wildcard app/*.cpp app/**/*.cpp)
-APP_OBJECTS	= $(patsubst %.cpp,$(BIN_DIR)/%.o, $(APP_SRC))
+.DEFAULT_GOAL := build
 
-APP			= $(BUILD_DIR)/$(PROJECT_NAME)
+all: build test
 
-$(info LIBRARY=$(LIBRARY))
-$(info SOURCES=$(SOURCES))
-$(info OBJECTS=$(OBJECTS))
-$(info LIBRARY_SO=$(LIBRARY_SO))
-$(info TESTS=$(TESTS))
+build: $(APP)
 
-all: $(LIBRARY) $(LIBRARY_SO) tests app
+run: $(APP)
+	@$(APP)
 
-app: $(APP_OBJECTS)
-	@echo ""
-	@echo "=============================================="
-	@echo " Building application: $(PROJECT_NAME)"
-	@echo "=============================================="
-	$(CXX) $(CXXFLAGS) $(APP_OBJECTS) $(LIBRARY) -o $(APP)
-	@echo ""
-	@echo "=============================================="
-	@echo " Running application..."
-	@echo "=============================================="
-	@echo ""
-	@./$(APP)
+test: $(TEST_BINS)
+	@sh ./run_tests.sh $(TEST_BINS)
 
-bin/src/%.o: src/%.cpp
+debug:
+	@$(MAKE) BUILD_TYPE=debug all
+
+release:
+	@$(MAKE) BUILD_TYPE=release all
+
+$(APP): $(APP_OBJECTS) $(LIBRARY)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(LDFLAGS) $^ -o $@
 
-bin/tests/%: tests/%.cpp
+$(LIBRARY): $(OBJECTS)
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $< $(LIBRARY) -o $@
+	ar rcs $@ $^
 
-bin/app/%.o: app/%.cpp
+$(BIN_DIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c $< -o $@
 
-$(LIBRARY): CXXFLAGS += -fPIC
-$(LIBRARY): build $(OBJECTS)
-	@echo ""
-	@echo "=== Building static library [$(LIBRARY)]: "
-	@echo ""
-	ar rcs $@ $(OBJECTS)
-	ranlib $@
-	@echo ""
-	@echo "========== Static Library Compiled ==========="
-	@echo ""
+$(BIN_DIR)/tests/%: $(TEST_DIR)/%.cpp $(LIBRARY)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $< $(LIBRARY) $(LDFLAGS) -o $@
 
-$(LIBRARY_SO): $(LIBRARY) $(OBJECTS)
-	$(CXX) $(CXXFLAGS) -shared -o $@ $(OBJECTS)
+tidy:
+	clang-tidy $(SOURCES) $(APP_SOURCES) -- $(CPPFLAGS) -std=c++23
 
-tests: $(TESTS)
-	@echo ""
-	@echo "=============================================="
-	@echo " Running tests"
-	@echo "=============================================="
-	@echo ""
-	@sh ./run_tests.sh
-	@echo "=============== Tests Passed ================="
-	@echo ""
+format:
+	clang-format -i $(FORMAT_SOURCES)
 
-build:
-	@echo ""
-	@echo "=============================================="
-	@echo " Building project: $(PROJECT_NAME)"
-	@echo "=============================================="
-	@mkdir -p $(BUILD_DIR)
-	@mkdir -p $(BIN_DIR)
-	@echo ""
-
-
-.PHONY: clean
+format-check:
+	clang-format --dry-run --Werror $(FORMAT_SOURCES)
 
 clean:
-	@rm -rf $(BIN_DIR) $(BUILD_DIR)
+	@rm -rf $(BUILD_ROOT)
 	@echo "Cleaned build files."
+
+.PHONY: all build run test debug release tidy format format-check clean
+
+-include $(DEPENDENCIES) $(APP_DEPENDENCIES)
