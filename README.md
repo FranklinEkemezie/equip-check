@@ -26,9 +26,45 @@ The project uses only the C++ standard library.
 
 ## Build and run
 
-From the project root, run `make app`. The Makefile places build artifacts in
-`bin/` and `build/`, then starts the interactive application. To remove
-generated artifacts, run `make clean`.
+From the project root:
+
+```sh
+make build
+make run
+```
+
+Build artifacts are placed in `build/debug/` by default. A release build uses
+compiler optimizations and is kept separately:
+
+```sh
+make BUILD_TYPE=release build
+```
+
+To remove generated artifacts, run `make clean`.
+
+## Development checks
+
+Run the unit tests with:
+
+```sh
+make test
+```
+
+The test suite includes a requirement test that equipment identifiers must be
+unique. It currently fails because the in-memory database accepts duplicate
+identifiers; this is intentional feedback for the next implementation step.
+
+When Clang tools are installed, these commands are also available:
+
+```sh
+make tidy          # Run clang-tidy static analysis
+make format         # Apply clang-format to source and test files
+make format-check   # Check formatting without changing files
+```
+
+GitHub Actions builds and tests the project with GCC and Clang in both debug
+and release configurations. It also runs clang-tidy on every push and pull
+request targeting `main`.
 
 ## Menu
 
